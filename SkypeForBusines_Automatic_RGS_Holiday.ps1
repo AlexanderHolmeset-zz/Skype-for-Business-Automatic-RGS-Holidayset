@@ -1,9 +1,11 @@
 ﻿### Skype for Business Automatic RGS Holidayset ###
-### Version 1.0                                 ###
+### Version 1.1                                 ###
 ### Author: Alexander Holmeset                  ###
 ### Email: alexander.holmeset@gmail.com         ###
 ### Twitter: twitter.com/Holmez85               ###
 ### Blog: skype4bworld.wordpress.com            ###
+
+# Version 1.1:  Rewrote parts of the script. Holidaylist had to be an Array. Now the script works as it should.
 
 
 # This script catch holidays from officeholidays.com and creates a RGS Holiday Set for Skype for Business.
@@ -31,6 +33,8 @@ $PoolName = "FE01.contoso.local"
 $HolidaySetName = "Norwegian Holidays"
 $Country = "Norway"
 
+
+#Function for catching data from officeholidays.com, and convert it to a variable.
 function Mostcountries {
 
         param(
@@ -56,40 +60,14 @@ $day= (($table -split "<TD>")[1] -split "</TD>")[0] ;
 
 $Date = (($table -split "<SPAN class=ad_head_728>")[1] -split "</SPAN>")[0]; 
 
-$Holiday = ((($table -split "<TD><A title=")[1] -split ">")[1] -split "</A")[0]
-$Remarks = (($table -split "class=remarks>")[1] -split "<")[0]; 
+$Title = ((($table -split "<TD><A title=")[1] -split ">")[1] -split "</A")[0]
 [PSCustomObject]@{
-        Date = [DateTime]$Date  ; Holiday = $Holiday
-        Remarks = If ($Holiday -ne $Remarks){$Remarks}}
+        Title = $Title ; Date = $Date | Get-Date -Format yyyy-MM-dd
+        }
 
  }
 }
 
-function Fewcountries {
-
-
-    param(
-        [Parameter(Position=0)]
-        [ValidateSet("Albania","Switzerland")]
-        [System.String]$Country
-        )
-
-
-$uri = "http://www.officeholidays.com/countries/$Country/index.php"
-$html = Invoke-WebRequest -Uri $uri
-$table = $html.ParsedHtml.getElementsByTagName('tr') |
-Where-Object {$_.classname -eq 'holiday' -or $_.classname -eq 'regional' -or $_.classname -eq 'publicholiday'} |
-Select-Object -exp innerHTML
-
-$script:holidays = foreach ($t in $table){
-    [void]($t -match 'SPAN title="(.*?)"') ; $m1 = $Matches[1]
-    [void]($t -match 'tooltip>(.*)') ; $m2 = $Matches[1]
-  .  [void]($t -match 'remarks>(.*) ') ; $m3 = $Matches[1]
-    [PSCustomObject]{
-        Date = $m1 ; Holiday = $m2
-        Remarks = If ($m2 -ne $m3){$m3}}
-}
-}
 
 
 
@@ -103,42 +81,35 @@ $ErrorActionPreference = "SilentlyContinue"
 
 
 Mostcountries -country $Country
-Fewcountries -country $Country
 
-# Get the Holiday Set
-$y = Try {Get-CsRgsHolidaySet -Identity "service:ApplicationServer:$PoolName" -Name $HolidaySetName}catch{$null}
- 
-# Clear the current Holiday List if it exists (Stops duplicates)
-If ($y.name -eq $HolidaySetName){
-    $y.HolidayList.Clear()
-    Set-CsRgsHolidaySet -Instance $y
+
+$exist = Get-CsRgsHolidaySet -name $HolidaySetName
+
+#If holidayset already exist, it gets deleted. This is to avoid duplicates.
+If ($HolidaySetName -eq $exist.name){
+Get-CsRgsHolidaySet -name $HolidaySetName | Remove-CsRgsHolidaySet
 }
- 
-ForEach ($hol in $holidays){
- 
+
+
+#Converts $Holidays variable to Array
+$HolSetArray = @()
+foreach ($hol in $holidays)
+{ 
+
+    
     $StartDate = $hol.date | get-date -Format yyyy-MM-dd
     $EndDate = $([DateTime]$hol.date).AddDays(1)
-    
-    # Ignore any previous public holidays
-    If (([DateTime]$hol.date) -gt $(get-date -Format yyyy-MM-dd)){
- 
-        $x = New-CsRgsHoliday -StartDate $StartDate -EndDate $EndDate -Name $hol.holiday
- 
-        # If the current Holiday set exists add day to Holiday List
-        If ($y.name -eq $HolidaySetName){
-            $y.HolidayList.Add($x)
-            Set-CsRgsHolidaySet -Instance $y
-        }Else{
-        # Create the holiday set
-            New-CsRgsHolidaySet -Parent "service:ApplicationServer:$PoolName" -Name $HolidaySetName -HolidayList($x)
-        }
-    }
+
+    $Holiday = New-CsRgsHoliday -Name $Hol.title -StartDate $startdate -EndDate $EndDate
+    $HolSetArray += $Holiday
+}
+
+#Creates new holiday set
+if ($HolSetArray.Count -gt 0)
+{
+        New-CsRgsHolidaySet -Name $HolidaySetName -Parent $poolname -HolidayList($HolSetArray)       
 }
 
 
-#Lists the holidays added. 
-Get-CsRgsHolidaySet | Select-Object -ExpandProperty HolidayList
-
-
-
-
+#Outputs the days inside the new holidayset 
+Get-CsRgsHolidaySet | select -ExpandProperty HolidayList
