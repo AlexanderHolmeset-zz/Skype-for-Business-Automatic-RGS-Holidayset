@@ -56,13 +56,15 @@ $tables = $html.ParsedHtml.getElementsByTagName('tr') |
 Where-Object {$_.classname -eq 'holiday' -or $_.classname -eq 'regional' -or $_.classname -eq 'publicholiday' } |
 Select-Object -exp innerHTML
 $script:holidays = foreach ($table In $tables){ 
-$day= (($table -split "<TD>")[1] -split "</TD>")[0] ;
 
 $Date = (($table -split "<SPAN class=ad_head_728>")[1] -split "</SPAN>")[0]; 
+$dateofmonth = $Date -replace '\D+(\d+)','$1'
+$month = $Date -replace '[^a-zA-Z-]',''
+$dayofmonth = $dateofmonth+$month
 
 $Title = ((($table -split "<TD><A title=")[1] -split ">")[1] -split "</A")[0]
 [PSCustomObject]@{
-        Title = $Title ; Date = $Date | Get-Date -Format yyyy-MM-dd
+        Title = $Title ; Date = $dayofmonth | Get-Date -Format yyyy-MM-dd
         }
 
  }
